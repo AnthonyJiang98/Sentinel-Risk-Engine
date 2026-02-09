@@ -1,102 +1,286 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Search, Filter, AlertTriangle, CheckCircle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import Papa from 'papaparse';
+import { 
+  Search, Landmark, X, ShieldCheck, 
+  Globe, Upload, Trash2, Plus, Download, Clock, AlertCircle
+} from 'lucide-react';
 
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
-  // NEW: State to track selected risk filter
   const [selectedRisk, setSelectedRisk] = useState("All");
+  const [selectedTx, setSelectedTx] = useState<any>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const [newRecord, setNewRecord] = useState({
+    id: "", user: "", amount: "", status: "Pending", risk: "Medium", method: "Manual Entry", date: "", location: "Internal Server"
+  });
 
-  const transactions = [
-    { id: "TX1002", user: "Alice Smith", amount: "$12,400", status: "Flagged", risk: "High" },
-    { id: "TX1003", user: "Bob Jones", amount: "$45.00", status: "Verified", risk: "Low" },
-    { id: "TX1004", user: "Charlie Day", amount: "$2,100", status: "Pending", risk: "Medium" },
-    { id: "TX1005", user: "Diane Prince", amount: "$8,900", status: "Flagged", risk: "High" },
-  ];
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // NEW logic: Filter by BOTH search and risk level
+  // --- PERSISTENCE ---
+  useEffect(() => {
+    const savedData = localStorage.getItem('sentinel_data');
+    const defaultData = [
+      { id: "TX1002", user: "Alice Smith", amount: "$12,400", status: "Flagged", risk: "High", date: "2026-02-08 14:22", location: "New York, USA", method: "Wire Transfer" },
+      { id: "TX1003", user: "Bob Jones", amount: "$45.00", status: "Verified", risk: "Low", date: "2026-02-08 15:10", location: "London, UK", method: "Debit Card" },
+    ];
+
+    if (savedData && JSON.parse(savedData).length > 0) {
+      setTransactions(JSON.parse(savedData));
+    } else {
+      setTransactions(defaultData);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (transactions.length > 0) {
+      localStorage.setItem('sentinel_data', JSON.stringify(transactions));
+    }
+  }, [transactions]);
+
+  // --- CALCULATIONS ---
+  const stats = {
+    high: transactions.filter(t => t.risk === 'High').length,
+    medium: transactions.filter(t => t.risk === 'Medium').length,
+    low: transactions.filter(t => t.risk === 'Low').length
+  };
+
   const filteredTransactions = transactions.filter((tx) => {
-    const matchesSearch = tx.user.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         tx.id.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (tx.user?.toLowerCase() || "").includes(searchTerm.toLowerCase()) || 
+                         (tx.id?.toLowerCase() || "").includes(searchTerm.toLowerCase());
     const matchesRisk = selectedRisk === "All" || tx.risk === selectedRisk;
-    
     return matchesSearch && matchesRisk;
   });
 
+  // --- HANDLERS ---
+  const handleDeleteTx = (id: string) => {
+    if (confirm("Permanently delete this record?")) {
+      const updated = transactions.filter(t => t.id !== id);
+      setTransactions(updated);
+      localStorage.setItem('sentinel_data', JSON.stringify(updated));
+      setSelectedTx(null);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (confirm(`Delete ${selectedIds.length} selected records?`)) {
+      const updated = transactions.filter(t => !selectedIds.includes(t.id));
+      setTransactions(updated);
+      localStorage.setItem('sentinel_data', JSON.stringify(updated));
+      setSelectedIds([]);
+      setSelectedTx(null);
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true, skipEmptyLines: true,
+        complete: (results) => {
+          const importedData = results.data.map((row: any) => ({
+            id: row.id || `TX${Math.floor(1000 + Math.random() * 9000)}`,
+            user: row.user || "Imported Entity",
+            amount: row.amount || "$0.00",
+            status: row.status || "Pending",
+            risk: row.risk || "Medium",
+            method: row.method || "CSV Import",
+            date: row.date || new Date().toLocaleString(),
+            location: row.location || "Remote Server"
+          }));
+          setTransactions([...importedData, ...transactions]);
+        },
+      });
+    }
+  };
+
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const recordToAdd = { ...newRecord, id: `TX${Math.floor(1000 + Math.random() * 9000)}`, date: new Date().toLocaleString() };
+    setTransactions([recordToAdd, ...transactions]);
+    setIsModalOpen(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8 text-slate-900 font-sans">
-      <header className="mb-8 space-y-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Sentinel Risk Engine</h1>
-            <p className="text-slate-500 text-sm">Enterprise Transaction Monitoring</p>
+    <div className="relative min-h-screen bg-[#f8fafc] text-slate-900 flex overflow-hidden font-sans">
+      
+      <div className={`flex-1 p-8 transition-all duration-500 ${selectedTx ? 'mr-96' : ''}`}>
+        <header className="mb-8 space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="bg-slate-900 p-2 rounded-lg text-white"><Landmark className="w-6 h-6" /></div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Sentinel Risk Engine</h1>
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Live Security Feed</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all shadow-md">
+                <Plus className="w-4 h-4" /> New Entry
+              </button>
+              <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold hover:border-slate-400 shadow-sm">
+                <Upload className="w-4 h-4 text-slate-500" /> Import
+              </button>
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-slate-900 outline-none text-sm shadow-sm" onChange={(e) => setSearchTerm(e.target.value)} />
+              </div>
+            </div>
           </div>
-          
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search ID or User..."
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 bg-white text-sm outline-none"
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+
+          {/* RISK SUMMARY BAR */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</p>
+              <p className="text-2xl font-black">{transactions.length}</p>
+            </div>
+            <div className="bg-red-50 p-4 rounded-2xl border border-red-100 shadow-sm text-red-600">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-1">High</p>
+              <p className="text-2xl font-black">{stats.high}</p>
+            </div>
+            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 shadow-sm text-amber-600">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-1">Medium</p>
+              <p className="text-2xl font-black">{stats.medium}</p>
+            </div>
+            <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm text-emerald-600">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-1">Low</p>
+              <p className="text-2xl font-black">{stats.low}</p>
+            </div>
           </div>
-        </div>
 
-        {/* NEW: Filter Buttons */}
-        <div className="flex gap-2 items-center text-sm">
-          <span className="text-slate-500 mr-2 flex items-center gap-1">
-            <Filter className="w-3 h-3" /> Filter by:
-          </span>
-          {["All", "High", "Medium", "Low"].map((level) => (
-            <button
-              key={level}
-              onClick={() => setSelectedRisk(level)}
-              className={`px-4 py-1.5 rounded-full border transition-all ${
-                selectedRisk === level 
-                ? "bg-slate-900 text-white border-slate-900 shadow-sm" 
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-              }`}
-            >
-              {level}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {/* Stats and Table follow same pattern as before... */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="p-4 text-xs font-bold text-slate-500 uppercase">Transaction ID</th>
-              <th className="p-4 text-xs font-bold text-slate-500 uppercase">Entity</th>
-              <th className="p-4 text-xs font-bold text-slate-500 uppercase">Amount</th>
-              <th className="p-4 text-xs font-bold text-slate-500 uppercase">Risk Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((tx) => (
-              <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                <td className="p-4 text-sm font-mono text-blue-600">{tx.id}</td>
-                <td className="p-4 text-sm font-medium">{tx.user}</td>
-                <td className="p-4 text-sm font-semibold">{tx.amount}</td>
-                <td className="p-4">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                    tx.risk === 'High' ? 'bg-red-50 text-red-700 border border-red-100' : 
-                    tx.risk === 'Medium' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                    'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                  }`}>
-                    {tx.risk === 'High' && <AlertTriangle className="w-3 h-3" />}
-                    {tx.risk === 'Low' && <CheckCircle className="w-3 h-3" />}
-                    {tx.risk}
-                  </span>
-                </td>
-              </tr>
+          <div className="flex gap-2 items-center text-sm bg-white p-1.5 rounded-xl border border-slate-200 w-fit">
+            {["All", "High", "Medium", "Low"].map((level) => (
+              <button key={level} onClick={() => setSelectedRisk(level)} className={`px-4 py-1.5 rounded-lg font-bold transition-all ${selectedRisk === level ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:bg-slate-50"}`}>{level}</button>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </header>
+
+        {/* TABLE */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 border-b border-slate-200">
+              <tr>
+                <th className="p-5 w-12">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedIds.length > 0 && selectedIds.length === filteredTransactions.length} 
+                    onChange={() => setSelectedIds(selectedIds.length === filteredTransactions.length ? [] : filteredTransactions.map(t => t.id))} 
+                  />
+                </th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Transaction</th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Entity Name</th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Risk Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredTransactions.map((tx) => (
+                <tr key={tx.id} onClick={() => { setSelectedTx(tx); setIsEditing(false); }}
+                  className={`cursor-pointer transition-all ${selectedTx?.id === tx.id ? 'bg-slate-900 text-white' : 'hover:bg-slate-50'}`}>
+                  <td className="p-5" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedIds.includes(tx.id)} onChange={() => setSelectedIds(prev => prev.includes(tx.id) ? prev.filter(i => i !== tx.id) : [...prev, tx.id])} />
+                  </td>
+                  <td className={`p-5 text-sm font-mono ${selectedTx?.id === tx.id ? 'text-slate-300' : 'text-slate-400'}`}>{tx.id}</td>
+                  <td className="p-5">
+                    <div className="text-sm font-bold">{tx.user}</div>
+                    <div className="text-[10px] font-medium uppercase opacity-60">{tx.method}</div>
+                  </td>
+                  <td className="p-5 text-right">
+                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
+                      tx.risk === 'High' ? 'bg-red-600 text-white' : 
+                      tx.risk === 'Medium' ? 'bg-amber-400 text-slate-900' : 
+                      'bg-emerald-500 text-white'
+                    }`}>
+                      {tx.risk}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* FLOATING BULK DELETE BAR */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-50 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-bold">{selectedIds.length} Selected</span>
+          <button onClick={handleBulkDelete} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-xl text-xs font-bold transition-all">
+            <Trash2 className="w-4 h-4" /> Delete Records
+          </button>
+          <button onClick={() => setSelectedIds([])} className="text-xs text-slate-400 hover:text-white">Cancel</button>
+        </div>
+      )}
+
+      {/* INSPECTION SIDEBAR */}
+      <div className={`fixed right-0 top-0 h-full w-96 bg-white border-l border-slate-200 shadow-2xl transition-transform duration-500 transform ${selectedTx ? 'translate-x-0' : 'translate-x-full'}`}>
+        {selectedTx && (
+          <div className="p-8 h-full flex flex-col justify-between">
+            <div className="space-y-8">
+              <div className="flex justify-between items-center">
+                <h2 className="font-black text-xs uppercase text-slate-400">Deep Inspection</h2>
+                <button onClick={() => setSelectedTx(null)}><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Transaction Value</p>
+                <h3 className="text-4xl font-black text-slate-900 tracking-tighter">{selectedTx.amount}</h3>
+              </div>
+              <div className="space-y-4">
+                <DetailRow icon={<ShieldCheck className="w-4 h-4" />} label="ID" value={selectedTx.id} />
+                <DetailRow icon={<Clock className="w-4 h-4" />} label="Date" value={selectedTx.date} />
+                <DetailRow icon={<Globe className="w-4 h-4" />} label="Region" value={selectedTx.location} />
+              </div>
+            </div>
+
+            {/* SINGLE DELETE BUTTON */}
+            <button 
+              onClick={() => handleDeleteTx(selectedTx.id)}
+              className="w-full py-4 flex items-center justify-center gap-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-2xl font-bold text-sm transition-all mt-auto"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Record
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL (Manual Entry) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-lg">Manual Entry</h3>
+              <button onClick={() => setIsModalOpen(false)}><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <input required placeholder="Entity Name" className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-slate-900" onChange={e => setNewRecord({...newRecord, user: e.target.value})} />
+              <input required placeholder="Amount" className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-slate-900" onChange={e => setNewRecord({...newRecord, amount: e.target.value})} />
+              <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-slate-900 bg-white" onChange={e => setNewRecord({...newRecord, risk: e.target.value})}>
+                <option value="Low">Low Risk</option>
+                <option value="Medium">Medium Risk</option>
+                <option value="High">High Risk</option>
+              </select>
+              <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-slate-800 transition-all">Create Record</button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ icon, label, value }: { icon: any, label: string, value: string }) {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="p-2.5 bg-slate-50 rounded-xl text-slate-400">{icon}</div>
+      <div>
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+        <p className="text-sm font-bold text-slate-700">{value || "N/A"}</p>
       </div>
     </div>
   );
