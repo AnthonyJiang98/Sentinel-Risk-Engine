@@ -10,11 +10,11 @@ app.use(express.json());
 
 // DATABASE CONNECTION
 const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "sentinel_db",
+  user: process.env.DB_USER || "postgres",
+  host: process.env.DB_HOST || "localhost",
+  database: process.env.DB_NAME || "sentinel_db",
   password: process.env.DB_PASSWORD,
-  port: 5432,
+  port: parseInt(process.env.DB_PORT || "5432"),
 });
 
 // TEST ROUTE
@@ -30,6 +30,7 @@ app.get("/transactions", async (req, res) => {
   res.json(result.rows);
 });
 
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
